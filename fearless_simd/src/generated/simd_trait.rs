@@ -570,6 +570,25 @@ pub trait Simd:
         }
         result
     }
+    #[doc = "Compact the bytes selected by `mask` into consecutive bytes at the start of `destination`.\n\nBytes above the number of selected lanes retain their previous values."]
+    #[inline(always)]
+    fn compress_store_u8x16(
+        self,
+        destination: &mut [u8; 16],
+        values: u8x16<Self>,
+        mask: mask8x16<Self>,
+    ) -> () {
+        let mask = self.to_bitmask_mask8x16(mask);
+        let mut destination_index = 0;
+        let mut source_index = 0;
+        while source_index < 16 {
+            if mask & (1u64 << source_index) != 0 {
+                destination[destination_index] = values[source_index];
+                destination_index += 1;
+            }
+            source_index += 1;
+        }
+    }
     #[doc = "Expand consecutive low bytes from `values` into the lanes selected by `mask`.\n\nUnselected lanes are zero."]
     #[inline(always)]
     fn expand_u8x16(self, values: u8x16<Self>, mask: mask8x16<Self>) -> u8x16<Self> {
@@ -2439,6 +2458,25 @@ pub trait Simd:
             input_lane += 1;
         }
         result
+    }
+    #[doc = "Compact the bytes selected by `mask` into consecutive bytes at the start of `destination`.\n\nBytes above the number of selected lanes retain their previous values."]
+    #[inline(always)]
+    fn compress_store_u8x32(
+        self,
+        destination: &mut [u8; 32],
+        values: u8x32<Self>,
+        mask: mask8x32<Self>,
+    ) -> () {
+        let mask = self.to_bitmask_mask8x32(mask);
+        let mut destination_index = 0;
+        let mut source_index = 0;
+        while source_index < 32 {
+            if mask & (1u64 << source_index) != 0 {
+                destination[destination_index] = values[source_index];
+                destination_index += 1;
+            }
+            source_index += 1;
+        }
     }
     #[doc = "Expand consecutive low bytes from `values` into the lanes selected by `mask`.\n\nUnselected lanes are zero."]
     #[inline(always)]
@@ -5821,6 +5859,25 @@ pub trait Simd:
             input_lane += 1;
         }
         result
+    }
+    #[doc = "Compact the bytes selected by `mask` into consecutive bytes at the start of `destination`.\n\nBytes above the number of selected lanes retain their previous values."]
+    #[inline(always)]
+    fn compress_store_u8x64(
+        self,
+        destination: &mut [u8; 64],
+        values: u8x64<Self>,
+        mask: mask8x64<Self>,
+    ) -> () {
+        let mask = self.to_bitmask_mask8x64(mask);
+        let mut destination_index = 0;
+        let mut source_index = 0;
+        while source_index < 64 {
+            if mask & (1u64 << source_index) != 0 {
+                destination[destination_index] = values[source_index];
+                destination_index += 1;
+            }
+            source_index += 1;
+        }
     }
     #[doc = "Expand consecutive low bytes from `values` into the lanes selected by `mask`.\n\nUnselected lanes are zero."]
     #[inline(always)]

@@ -636,6 +636,7 @@ impl Level for Neon {
             OpSig::ConcatSwizzleDyn => composed_concat_swizzle_dyn(op, vec_ty),
             OpSig::Multishift
             | OpSig::Compress { .. }
+            | OpSig::CompressStore
             | OpSig::Expand { .. }
             | OpSig::LoadExpand { .. } => {
                 unreachable!("portable byte operation should use its trait default")

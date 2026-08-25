@@ -242,6 +242,24 @@ pub(crate) fn generic_op(op: &Op, ty: &VecType) -> TokenStream {
                 }
             }
         }
+        OpSig::CompressStore => {
+            let len = Literal::usize_unsuffixed(ty.len);
+            let to_bitmask = generic_op_name("to_bitmask", &ty.mask_ty());
+            quote! {
+                #method_sig {
+                    let mask = self.#to_bitmask(mask);
+                    let mut destination_index = 0;
+                    let mut source_index = 0;
+                    while source_index < #len {
+                        if mask & (1u64 << source_index) != 0 {
+                            destination[destination_index] = values[source_index];
+                            destination_index += 1;
+                        }
+                        source_index += 1;
+                    }
+                }
+            }
+        }
         OpSig::Expand { merge: false } => {
             let merge_method = generic_op_name("expand_merge", ty);
             let ty = ty.rust();

@@ -1755,6 +1755,32 @@ impl Simd for Avx512 {
         kernel(self, values, mask, merge)
     }
     #[inline(always)]
+    fn compress_store_u8x16(
+        self,
+        destination: &mut [u8; 16],
+        values: u8x16<Self>,
+        mask: mask8x16<Self>,
+    ) -> () {
+        crate::kernel!(
+            #[inline(always)]
+            fn kernel(
+                token: Avx512,
+                destination: &mut [u8; 16],
+                values: u8x16<Avx512>,
+                mask: mask8x16<Avx512>,
+            ) -> () {
+                unsafe {
+                    _mm_mask_compressstoreu_epi8(
+                        destination.as_mut_ptr().cast::<i8>(),
+                        u64::from((mask).val) as u16,
+                        values.into(),
+                    )
+                }
+            }
+        );
+        kernel(self, destination, values, mask)
+    }
+    #[inline(always)]
     fn expand_u8x16(self, values: u8x16<Self>, mask: mask8x16<Self>) -> u8x16<Self> {
         crate::kernel!(
             #[inline(always)]
@@ -6829,6 +6855,32 @@ impl Simd for Avx512 {
             }
         );
         kernel(self, values, mask, merge)
+    }
+    #[inline(always)]
+    fn compress_store_u8x32(
+        self,
+        destination: &mut [u8; 32],
+        values: u8x32<Self>,
+        mask: mask8x32<Self>,
+    ) -> () {
+        crate::kernel!(
+            #[inline(always)]
+            fn kernel(
+                token: Avx512,
+                destination: &mut [u8; 32],
+                values: u8x32<Avx512>,
+                mask: mask8x32<Avx512>,
+            ) -> () {
+                unsafe {
+                    _mm256_mask_compressstoreu_epi8(
+                        destination.as_mut_ptr().cast::<i8>(),
+                        u64::from((mask).val) as u32,
+                        values.into(),
+                    )
+                }
+            }
+        );
+        kernel(self, destination, values, mask)
     }
     #[inline(always)]
     fn expand_u8x32(self, values: u8x32<Self>, mask: mask8x32<Self>) -> u8x32<Self> {
@@ -12208,6 +12260,32 @@ impl Simd for Avx512 {
             }
         );
         kernel(self, values, mask, merge)
+    }
+    #[inline(always)]
+    fn compress_store_u8x64(
+        self,
+        destination: &mut [u8; 64],
+        values: u8x64<Self>,
+        mask: mask8x64<Self>,
+    ) -> () {
+        crate::kernel!(
+            #[inline(always)]
+            fn kernel(
+                token: Avx512,
+                destination: &mut [u8; 64],
+                values: u8x64<Avx512>,
+                mask: mask8x64<Avx512>,
+            ) -> () {
+                unsafe {
+                    _mm512_mask_compressstoreu_epi8(
+                        destination.as_mut_ptr().cast::<i8>(),
+                        u64::from((mask).val) as u64,
+                        values.into(),
+                    )
+                }
+            }
+        );
+        kernel(self, destination, values, mask)
     }
     #[inline(always)]
     fn expand_u8x64(self, values: u8x64<Self>, mask: mask8x64<Self>) -> u8x64<Self> {

@@ -89,6 +89,8 @@ pub(crate) enum OpSig {
     Multishift,
     /// Takes a byte vector, a same-width byte-lane mask, and optionally a merge vector.
     Compress { merge: bool },
+    /// Compresses the selected byte-vector lanes into consecutive bytes at the destination.
+    CompressStore,
     /// Takes a byte vector, a same-width byte-lane mask, and optionally a merge vector.
     Expand { merge: bool },
     /// Takes a reference to a vector-sized byte array, a same-width byte-lane mask, and optionally a merge
@@ -339,6 +341,18 @@ impl Op {
                     vec,
                 )
             }
+            OpSig::CompressStore => {
+                let len = Literal::usize_unsuffixed(vec_ty.len);
+                let mask = vec_ty.mask_ty().rust();
+                (
+                    vec![
+                        quote! { &mut [u8; #len] },
+                        vec.clone(),
+                        quote! { #mask<#simd_ty> },
+                    ],
+                    quote! { () },
+                )
+            }
             OpSig::LoadExpand { merge } => {
                 let len = Literal::usize_unsuffixed(vec_ty.len);
                 let mask = vec_ty.mask_ty().rust();
@@ -409,6 +423,7 @@ impl Op {
             | OpSig::ConcatSwizzleDyn
             | OpSig::Multishift
             | OpSig::Compress { .. }
+            | OpSig::CompressStore
             | OpSig::Expand { .. }
             | OpSig::LoadExpand { .. } => {
                 return None;
@@ -648,6 +663,13 @@ const U8_ONLY_OPS: &[Op] = &[
         OpSig::Compress { merge: true },
         "Compact the bytes selected by `{arg1}` into consecutive low lanes.\n\n\
          Lanes above the number of selected bytes retain the corresponding values from `{arg2}`.",
+    ),
+    Op::new(
+        "compress_store",
+        OpKind::AssociatedOnly,
+        OpSig::CompressStore,
+        "Compact the bytes selected by `{arg2}` into consecutive bytes at the start of `{arg0}`.\n\n\
+         Bytes above the number of selected lanes retain their previous values.",
     ),
     Op::new(
         "expand",
@@ -1670,6 +1692,7 @@ impl OpSig {
             Self::ConcatSwizzleDyn
                 | Self::Multishift
                 | Self::Compress { .. }
+                | Self::CompressStore
                 | Self::Expand { .. }
                 | Self::LoadExpand { .. }
         )
@@ -1700,6 +1723,7 @@ impl OpSig {
                 | Self::ConcatSwizzleDyn
                 | Self::Multishift
                 | Self::Compress { .. }
+                | Self::CompressStore
                 | Self::Expand { .. }
                 | Self::LoadExpand { .. }
                 | Self::Slide {
@@ -1747,6 +1771,7 @@ impl OpSig {
             Self::Compress { merge: true } | Self::Expand { merge: true } => {
                 &["values", "mask", "merge"]
             }
+            Self::CompressStore => &["destination", "values", "mask"],
             Self::LoadExpand { merge: false } => &["source", "mask"],
             Self::LoadExpand { merge: true } => &["source", "mask", "merge"],
             Self::Binary
@@ -1776,6 +1801,7 @@ impl OpSig {
             | Self::ConcatSwizzleDyn
             | Self::Multishift
             | Self::Compress { .. }
+            | Self::CompressStore
             | Self::Expand { .. }
             | Self::LoadExpand { .. } => &[],
             Self::Unary | Self::Cvt { .. } | Self::MaskReduce { .. } => &["self"],
@@ -1846,6 +1872,7 @@ impl OpSig {
             | Self::ConcatSwizzleDyn
             | Self::Multishift
             | Self::Compress { .. }
+            | Self::CompressStore
             | Self::Expand { .. }
             | Self::LoadExpand { .. }
             | Self::Slide { .. } => return None,

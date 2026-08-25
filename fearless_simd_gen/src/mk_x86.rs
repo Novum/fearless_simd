@@ -351,6 +351,7 @@ impl Level for X86 {
             OpSig::ConcatSwizzleDyn => composed_concat_swizzle_dyn(op, vec_ty),
             OpSig::Multishift
             | OpSig::Compress { .. }
+            | OpSig::CompressStore
             | OpSig::Expand { .. }
             | OpSig::LoadExpand { .. } => self.handle_avx512_byte_op(op, vec_ty),
             OpSig::Cvt {
@@ -1179,6 +1180,18 @@ impl X86 {
                 let intrinsic = format_ident!("{prefix}_mask_compress_epi8");
                 quote! {
                     #intrinsic(merge.into(), #mask_bits as #mask_ty, values.into()).simd_into(#token)
+                }
+            }
+            OpSig::CompressStore => {
+                let intrinsic = format_ident!("{prefix}_mask_compressstoreu_epi8");
+                quote! {
+                    unsafe {
+                        #intrinsic(
+                            destination.as_mut_ptr().cast::<i8>(),
+                            #mask_bits as #mask_ty,
+                            values.into(),
+                        )
+                    }
                 }
             }
             OpSig::Expand { merge: false } => {

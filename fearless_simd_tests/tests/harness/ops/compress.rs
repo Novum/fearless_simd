@@ -7,7 +7,7 @@ use fearless_simd_dev_macros::simd_test;
 #[simd_test]
 fn compress_all_widths<S: Simd>(simd: S) {
     macro_rules! check_width {
-        ($bytes:ident, $mask:ident, $lanes:literal, $compress:ident, $compress_merge:ident) => {{
+        ($bytes:ident, $mask:ident, $lanes:literal, $compress:ident, $compress_merge:ident, $compress_store:ident) => {{
             let values: [u8; $lanes] = core::array::from_fn(|lane| (lane * 3 + 1) as u8);
             let merge: [u8; $lanes] = core::array::from_fn(|lane| 0xe0_u8.wrapping_add(lane as u8));
             let patterned_mask: u64 = (0..$lanes)
@@ -21,11 +21,13 @@ fn compress_all_widths<S: Simd>(simd: S) {
                 let mask = $mask::from_bitmask(simd, mask_bits);
                 let mut expected = [0; $lanes];
                 let mut expected_merge = merge;
+                let mut expected_store = [0xa5; $lanes];
                 let mut output_lane = 0;
                 for (input_lane, value) in values.into_iter().enumerate() {
                     if mask_bits & (1_u64 << input_lane) != 0 {
                         expected[output_lane] = value;
                         expected_merge[output_lane] = value;
+                        expected_store[output_lane] = value;
                         output_lane += 1;
                     }
                 }
@@ -35,11 +37,35 @@ fn compress_all_widths<S: Simd>(simd: S) {
                     *simd.$compress_merge(values_vec, mask, merge_vec),
                     expected_merge
                 );
+                let mut stored = [0xa5; $lanes];
+                simd.$compress_store(&mut stored, values_vec, mask);
+                assert_eq!(stored, expected_store);
             }
         }};
     }
 
-    check_width!(u8x16, mask8x16, 16, compress_u8x16, compress_merge_u8x16);
-    check_width!(u8x32, mask8x32, 32, compress_u8x32, compress_merge_u8x32);
-    check_width!(u8x64, mask8x64, 64, compress_u8x64, compress_merge_u8x64);
+    check_width!(
+        u8x16,
+        mask8x16,
+        16,
+        compress_u8x16,
+        compress_merge_u8x16,
+        compress_store_u8x16
+    );
+    check_width!(
+        u8x32,
+        mask8x32,
+        32,
+        compress_u8x32,
+        compress_merge_u8x32,
+        compress_store_u8x32
+    );
+    check_width!(
+        u8x64,
+        mask8x64,
+        64,
+        compress_u8x64,
+        compress_merge_u8x64,
+        compress_store_u8x64
+    );
 }
