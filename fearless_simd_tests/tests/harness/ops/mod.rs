@@ -16,6 +16,7 @@ mod as_array_mut;
 mod as_array_ref;
 mod bitcast;
 mod block_splat;
+mod byte_ops;
 mod ceil;
 mod combine;
 mod copysign;

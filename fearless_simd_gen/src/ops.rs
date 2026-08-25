@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use anyhow::{Context, anyhow};
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::{format_ident, quote};
 use std::fmt::Write;
 
@@ -83,6 +83,17 @@ pub(crate) enum OpSig {
     /// Takes a vector and a same-width byte-index vector, and returns the original vector type with its bytes
     /// dynamically swizzled across the whole vector. Out-of-range indices produce zero.
     SwizzleDynPrecise,
+    /// Takes two byte vectors as one concatenated lookup table plus a byte-index vector.
+    ConcatSwizzleDyn,
+    /// Takes a 64-bit-lane data vector plus a same-width byte vector of bit offsets.
+    Multishift,
+    /// Takes a byte vector, a compact bitmask, and optionally a merge vector.
+    Compress { merge: bool },
+    /// Takes a byte vector, a compact bitmask, and optionally a merge vector.
+    Expand { merge: bool },
+    /// Takes a reference to a vector-sized byte array, a compact bitmask, and optionally a merge
+    /// vector.
+    LoadExpand { merge: bool },
     /// Takes a single argument of the source vector type, and returns a vector type of the target scalar type and the
     /// same length.
     Cvt {
@@ -312,6 +323,25 @@ impl Op {
                 let bytes_ty = vec_ty.bytes_ty().rust();
                 (vec![vec.clone(), quote! { #bytes_ty<#simd_ty> }], vec)
             }
+            OpSig::ConcatSwizzleDyn => (vec![vec.clone(), vec.clone(), vec.clone()], vec),
+            OpSig::Multishift => {
+                let words = VecType::new(ScalarType::Unsigned, 64, vec_ty.len / 8).rust();
+                (vec![quote! { #words<#simd_ty> }, vec.clone()], vec)
+            }
+            OpSig::Compress { merge: false } | OpSig::Expand { merge: false } => {
+                (vec![vec.clone(), quote! { u64 }], vec)
+            }
+            OpSig::Compress { merge: true } | OpSig::Expand { merge: true } => {
+                (vec![vec.clone(), quote! { u64 }, vec.clone()], vec)
+            }
+            OpSig::LoadExpand { merge } => {
+                let len = Literal::usize_unsuffixed(vec_ty.len);
+                let mut args = vec![quote! { &[u8; #len] }, quote! { u64 }];
+                if *merge {
+                    args.push(vec.clone());
+                }
+                (args, vec)
+            }
             OpSig::Cvt {
                 target_ty,
                 scalar_bits,
@@ -368,7 +398,13 @@ impl Op {
                 let arg1 = &arg_names[1];
                 quote! { (#arg0: S, #arg1: Self::Element) -> Self }
             }
-            OpSig::LoadInterleaved { .. } | OpSig::StoreInterleaved { .. } => {
+            OpSig::LoadInterleaved { .. }
+            | OpSig::StoreInterleaved { .. }
+            | OpSig::ConcatSwizzleDyn
+            | OpSig::Multishift
+            | OpSig::Compress { .. }
+            | OpSig::Expand { .. }
+            | OpSig::LoadExpand { .. } => {
                 return None;
             }
             OpSig::MaskFromBitmask | OpSig::MaskToBitmask | OpSig::MaskSet => return None,
@@ -575,6 +611,65 @@ const BASE_OPS: &[Op] = &[
         OpSig::SwizzleDynPrecise,
         "Dynamically swizzle this vector's bytes across the whole vector.\n\n\
         The `indices` operand is a same-width byte vector. For each output byte, index values within the vector's byte length select the corresponding byte from the input vector. Out-of-range indices produce zero.",
+    ),
+];
+
+const BYTE_OPS: &[Op] = &[
+    Op::new(
+        "concat_swizzle_dyn",
+        OpKind::AssociatedOnly,
+        OpSig::ConcatSwizzleDyn,
+        "Dynamically swizzle bytes from two concatenated vectors.\n\n\
+         Indices `0..N` address `{arg0}`, and indices `N..2*N` address `{arg1}`, where `N` is the number of lanes in the result. Out-of-range indices safely produce implementation-defined byte values.",
+    ),
+    Op::new(
+        "multishift",
+        OpKind::AssociatedOnly,
+        OpSig::Multishift,
+        "Select a byte at an arbitrary bit offset from each corresponding 64-bit lane.\n\n\
+         Each byte in `{arg1}` supplies its low six bits as the offset. Selections that cross the end of a 64-bit lane wrap around to the start of that same lane.",
+    ),
+    Op::new(
+        "compress",
+        OpKind::AssociatedOnly,
+        OpSig::Compress { merge: false },
+        "Compact the bytes selected by `{arg1}` into consecutive low lanes.\n\n\
+         Lanes above the number of selected bytes are zero. Mask bits above the vector's lane count are ignored.",
+    ),
+    Op::new(
+        "compress_merge",
+        OpKind::AssociatedOnly,
+        OpSig::Compress { merge: true },
+        "Compact the bytes selected by `{arg1}` into consecutive low lanes.\n\n\
+         Lanes above the number of selected bytes retain the corresponding values from `{arg2}`. Mask bits above the vector's lane count are ignored.",
+    ),
+    Op::new(
+        "expand",
+        OpKind::AssociatedOnly,
+        OpSig::Expand { merge: false },
+        "Expand consecutive low bytes from `{arg0}` into the lanes selected by `{arg1}`.\n\n\
+         Unselected lanes are zero. Mask bits above the vector's lane count are ignored.",
+    ),
+    Op::new(
+        "expand_merge",
+        OpKind::AssociatedOnly,
+        OpSig::Expand { merge: true },
+        "Expand consecutive low bytes from `{arg0}` into the lanes selected by `{arg1}`.\n\n\
+         Unselected lanes retain the corresponding values from `{arg2}`. Mask bits above the vector's lane count are ignored.",
+    ),
+    Op::new(
+        "load_expand",
+        OpKind::AssociatedOnly,
+        OpSig::LoadExpand { merge: false },
+        "Load consecutive bytes from `{arg0}` into the lanes selected by `{arg1}`.\n\n\
+         The first selected-lane-count bytes are consumed. Unselected lanes are zero. Mask bits above the vector's lane count are ignored.",
+    ),
+    Op::new(
+        "load_expand_merge",
+        OpKind::AssociatedOnly,
+        OpSig::LoadExpand { merge: true },
+        "Load consecutive bytes from `{arg0}` into the lanes selected by `{arg1}`.\n\n\
+         The first selected-lane-count bytes are consumed. Unselected lanes retain the corresponding values from `{arg2}`. Mask bits above the vector's lane count are ignored.",
     ),
 ];
 
@@ -1278,6 +1373,10 @@ pub(crate) fn ops_for_type(ty: &VecType) -> Vec<Op> {
         }
     }
 
+    if ty.scalar == ScalarType::Unsigned && ty.scalar_bits == 8 {
+        ops.extend_from_slice(BYTE_OPS);
+    }
+
     if let Some(combined_ty) = ty.combine_operand() {
         ops.push(Op::new(
             "combine",
@@ -1545,6 +1644,19 @@ impl CoreOpTrait {
 }
 
 impl OpSig {
+    /// Whether the `Simd` trait provides the portable implementation directly and backends only
+    /// override the operation when they have a better implementation.
+    pub(crate) fn has_trait_default(&self) -> bool {
+        matches!(
+            self,
+            Self::ConcatSwizzleDyn
+                | Self::Multishift
+                | Self::Compress { .. }
+                | Self::Expand { .. }
+                | Self::LoadExpand { .. }
+        )
+    }
+
     /// Whether this typed swizzle can be implemented by bitcasting to bytes and forwarding to the
     /// corresponding byte-vector operation.
     pub(crate) fn should_route_swizzle_through_bytes(&self, vec_ty: &VecType) -> bool {
@@ -1567,6 +1679,11 @@ impl OpSig {
                 | Self::MaskSet
                 | Self::SwizzleDyn
                 | Self::SwizzleDynPrecise
+                | Self::ConcatSwizzleDyn
+                | Self::Multishift
+                | Self::Compress { .. }
+                | Self::Expand { .. }
+                | Self::LoadExpand { .. }
                 | Self::Slide {
                     granularity: SlideGranularity::AcrossBlocks,
                     ..
@@ -1606,6 +1723,14 @@ impl OpSig {
             Self::SwizzleDynWithinBlocks | Self::SwizzleDyn | Self::SwizzleDynPrecise => {
                 &["a", "indices"]
             }
+            Self::ConcatSwizzleDyn => &["low", "high", "indices"],
+            Self::Multishift => &["data", "bit_offsets"],
+            Self::Compress { merge: false } | Self::Expand { merge: false } => &["values", "mask"],
+            Self::Compress { merge: true } | Self::Expand { merge: true } => {
+                &["values", "mask", "merge"]
+            }
+            Self::LoadExpand { merge: false } => &["source", "mask"],
+            Self::LoadExpand { merge: true } => &["source", "mask", "merge"],
             Self::Binary
             | Self::Compare
             | Self::Combine { .. }
@@ -1629,7 +1754,12 @@ impl OpSig {
             | Self::StoreInterleaved { .. }
             | Self::MaskFromBitmask
             | Self::MaskToBitmask
-            | Self::MaskSet => &[],
+            | Self::MaskSet
+            | Self::ConcatSwizzleDyn
+            | Self::Multishift
+            | Self::Compress { .. }
+            | Self::Expand { .. }
+            | Self::LoadExpand { .. } => &[],
             Self::Unary | Self::Cvt { .. } | Self::MaskReduce { .. } => &["self"],
             Self::Widen { .. } => &[],
             Self::Narrow { .. } => &[],
@@ -1695,6 +1825,11 @@ impl OpSig {
             | Self::SwizzleDynWithinBlocks
             | Self::SwizzleDyn
             | Self::SwizzleDynPrecise
+            | Self::ConcatSwizzleDyn
+            | Self::Multishift
+            | Self::Compress { .. }
+            | Self::Expand { .. }
+            | Self::LoadExpand { .. }
             | Self::Slide { .. } => return None,
         };
         Some(args)

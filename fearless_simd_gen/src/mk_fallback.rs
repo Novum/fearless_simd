@@ -717,6 +717,13 @@ impl Level for Fallback {
                     }
                 }
             }
+            OpSig::ConcatSwizzleDyn
+            | OpSig::Multishift
+            | OpSig::Compress { .. }
+            | OpSig::Expand { .. }
+            | OpSig::LoadExpand { .. } => {
+                unreachable!("byte operations use their portable trait defaults")
+            }
         }
     }
 
